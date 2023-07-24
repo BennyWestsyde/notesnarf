@@ -2,7 +2,6 @@
 // Import the module and reference it with the alias vscode in your code below
 const vscode = require('vscode');
 
-
 const symbol_map = {
 	"\\not": "¬",
 	"\\and": "∧",
@@ -29,8 +28,122 @@ const symbol_map = {
 	"\\approx": "≈",
 	"\\equiv": "≡",
 	"\\pm": "±",
-
+	"\\concat": "⋅",
+	"\\times": "×",
+	"\\lambda": "λ",
+	"\\mu": "μ",
+	"\\pi": "π",
+	"\\theta": "θ",
+	"\\alpha": "α",
+	"\\beta": "β",
+	"\\gamma": "γ",
+	"\\delta": "δ",
+	"\\epsilon": "ε",
+	"\\zeta": "ζ",
+	"\\eta": "η",
+	"\\iota": "ι",
+	"\\kappa": "κ",
+	"\\dot": "⋅",
 }
+
+// Add more mappings for subscript, superscript, mathbb_map, and symbol_map_args as needed...
+
+// Recursive function to replace LaTeX commands
+function replaceLatex(text) {
+	let pattern = /(\\[a-z]+)(\{[^{}]*\})?/gi;
+	let newText = text.replace(pattern, function (match, command, args) {
+		// If arguments are present, remove braces and recursively replace any nested commands
+		if (args) {
+			args = args.slice(1, -1);
+			args = replaceLatex(args);
+			args = args.split(",");
+		}
+
+		// Replace command with symbol or function result
+		if (command in symbol_map) {
+			return symbol_map[command];
+		} else if (command in symbol_map_args) {
+			return symbol_map_args[command](args);
+		} else {
+			return match; // Return original match if command is not recognized
+		}
+	});
+
+	return newText;
+}
+
+// Function to replace symbols in the current document
+function replaceSymbols() {
+	let editor = vscode.window.activeTextEditor;
+	if (!editor) {
+		return; // No open text editor
+	}
+
+	let document = editor.document;
+	let original_text = document.getText();
+
+	let rebuilt_text = replaceLatex(original_text);
+
+	if (rebuilt_text === original_text) {
+		vscode.window.showInformationMessage('No changes made');
+		return;
+	} else {
+		editor.edit(editBuilder => {
+			editBuilder.replace(new vscode.Range(0, 0, document.lineCount, 0), rebuilt_text);
+		});
+	}
+}
+
+// This method is called when your extension is activated
+// Your extension is activated the very first time the command is executed
+function activate(context) {
+	console.log('Congratulations, your extension "notesnarf" is now active!');
+
+	let disposable = vscode.commands.registerCommand('notesnarf.helloWorld', function () {
+		vscode.window.showInformationMessage('Hello World from NoteSnarf!');
+	});
+
+	let disposable2 = vscode.commands.registerCommand('notesnarf.replaceSymbols', replaceSymbols);
+
+	context.subscriptions.push(disposable);
+	context.subscriptions.push(disposable2);
+	// Register a completion item provider for all languages
+	let provider = vscode.languages.registerCompletionItemProvider('*', {
+		provideCompletionItems(document, position, token, context) {
+			// Get all text until the `position` and check if it ends in '\'
+			let linePrefix = document.lineAt(position).text.substr(0, position.character);
+			if (!linePrefix.startsWith('\\')) {
+				return undefined;
+			}
+
+			// Create completion items for each LaTeX command in symbol_map and symbol_map_args
+			let completions = [];
+			for (let command in symbol_map) {
+				let item = new vscode.CompletionItem(command, vscode.CompletionItemKind.Snippet);
+				item.insertText = command.slice(1);  // Remove leading backslash
+				completions.push(item);
+			}
+			for (let command in symbol_map_args) {
+				let item = new vscode.CompletionItem(command, vscode.CompletionItemKind.Snippet);
+				item.insertText = command.slice(1);  // Remove leading backslash
+				completions.push(item);
+			}
+
+			return completions;
+		}
+	}, '\\');
+
+	context.subscriptions.push(provider);
+}
+
+// This method is called when your extension is deactivated
+function deactivate() { }
+
+module.exports = {
+	activate,
+	deactivate
+}
+
 
 const superscript_map = {
 	"0": "⁰",
@@ -117,12 +230,6 @@ const subscript_map = {
 	"=": "₌",
 	"(": "₍",
 	")": "₎",
-	"a": "ₐ",
-	"e": "ₑ",
-	"o": "ₒ",
-	"x": "ₓ",
-	"y": "ᵧ",
-	"z": "\u1DBB"
 }
 
 const mathbb_map = {
@@ -145,98 +252,6 @@ const symbol_map_args = {
 	"\\mathbb": build_mathbb,
 }
 
-
-// This method is called when your extension is activated
-// Your extension is activated the very first time the command is executed
-
-/**
- * @param {vscode.ExtensionContext} context
- */
-function activate(context) {
-
-	// Use the console to output diagnostic information (console.log) and errors (console.error)
-	// This line of code will only be executed once when your extension is activated
-	console.log('Congratulations, your extension "notesnarf" is now active!');
-
-	// The command has been defined in the package.json file
-	// Now provide the implementation of the command with  registerCommand
-	// The commandId parameter must match the command field in package.json
-	let disposable = vscode.commands.registerCommand('notesnarf.helloWorld', function () {
-		// The code you place here will be executed every time your command is executed
-
-		// Display a message box to the user
-		vscode.window.showInformationMessage('Hello World from NoteSnarf!');
-	});
-
-	let disposable2 = vscode.commands.registerCommand('notesnarf.replaceSymbols', function () {
-		let editor = vscode.window.activeTextEditor;
-		if (!editor) {
-			return; // No open text editor
-		}
-		let document = editor.document;
-		const original_text = document.getText();
-		let word_array = original_text.split(" ");
-
-		for (let i in word_array) {
-			if (word_array[i].includes('\\') === false) {
-				continue;
-			}
-			else if (word_array[i].includes('{') && word_array[i].includes('}')) {
-				let [command, args] = extract_bracketed_arguments(word_array[i]);
-				if (command.toString() in symbol_map_args) {
-					let new_word = symbol_map_args[command];
-					word_array[i] = word_array[i].split("\\")[0] + new_word(args);
-				}
-			}
-			else if (word_array[i] in symbol_map) {
-				word_array[i] = symbol_map[word_array[i]];
-			}
-		}
-		let rebuilt_text = word_array.join(" ");
-		if (rebuilt_text === original_text) {
-			vscode.window.showInformationMessage('No changes made');
-			return;
-		}
-		else {
-			editor.edit(editBuilder => {
-				editBuilder.replace(new vscode.Range(0, 0, document.lineCount, 0), rebuilt_text);
-			});
-		}
-	});
-
-	context.subscriptions.push(disposable);
-	context.subscriptions.push(disposable2);
-}
-
-// This method is called when your extension is deactivated
-function deactivate() { }
-
-function extract_bracketed_arguments(text) {
-	let args = [];
-	let command = "\\" + text.split("\\")[1].split('{')[0];
-	for (let i = 1; i < text.length; i++) {
-		if (text[i] == '{') {
-			let bracket_count = 1;
-			let arg = "";
-			while (bracket_count > 0) {
-				i++;
-				if (text[i] != '}') {
-					arg += text[i];
-				}
-				if (text[i] == '{') {
-					bracket_count++;
-				}
-				else if (text[i] == '}') {
-					bracket_count--;
-				}
-
-			}
-			args.push(arg);
-		}
-	}
-	return [command, args];
-
-}
 
 function build_frac(args) {
 	let [arg1, arg2] = args;
@@ -297,9 +312,3 @@ function build_mathbb(args) {
 	return result;
 }
 
-
-
-module.exports = {
-	activate,
-	deactivate
-}
